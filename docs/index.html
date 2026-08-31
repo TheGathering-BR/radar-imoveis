@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radar Imóveis — São Paulo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="style.css?v=17305964">
+</head>
+<body>
+<header class="topo">
+  <div class="marca">
+    <h1>Radar Imóveis</h1>
+    <span class="cidade">São Paulo · SP</span>
+  </div>
+  <nav class="abas" role="tablist">
+    <button class="aba ativo" data-aba="mapa" role="tab">Mapa</button>
+    <button class="aba" data-aba="analisar" role="tab">Analisar anúncio</button>
+  </nav>
+  <nav class="controles" id="controles-mapa">
+    <select id="seletor-classe" aria-label="Classe de imóvel">
+      <option value="todos">Todos os residenciais</option>
+      <option value="apartamento">Apartamentos</option>
+      <option value="casa">Casas</option>
+      <option value="casa_vila">Casas de vila/condomínio</option>
+      <option value="cobertura">Coberturas</option>
+    </select>
+    <div class="grupo" role="group" aria-label="Métrica do mapa">
+      <button class="botao-metrica ativo" data-metrica="anuncios">Pedido (anúncios)</button>
+      <button class="botao-metrica" data-metrica="itbi">Fechado (ITBI)</button>
+      <button class="botao-metrica" data-metrica="var">Valorização</button>
+    </div>
+    <div class="grupo" role="group" aria-label="Janela de valorização">
+      <button class="botao-janela" data-janela="m3">3m</button>
+      <button class="botao-janela" data-janela="m6">6m</button>
+      <button class="botao-janela ativo" data-janela="m12">12m</button>
+      <button class="botao-janela" data-janela="m24">24m</button>
+    </div>
+  </nav>
+</header>
+
+<main class="conteudo" id="vista-analisar" hidden>
+  <div class="analisar">
+    <h2>O anúncio está caro ou barato?</h2>
+    <p class="nota">Cole o link de um anúncio de venda (VivaReal ou outro portal).
+      O preço pedido é comparado com a <strong>mediana de anúncios</strong> do mesmo
+      bairro e perfil similar (±20% de área, mesmo nº de quartos) — nunca com o ITBI.</p>
+    <form id="form-analisar">
+      <input type="url" id="url-anuncio" placeholder="https://www.vivareal.com.br/imovel/..."
+             required autocomplete="off">
+      <button type="submit" id="botao-analisar">Analisar</button>
+    </form>
+    <div id="resultado-analise" hidden></div>
+  </div>
+</main>
+
+<main class="conteudo" id="vista-mapa">
+  <div id="mapa" aria-label="Mapa coroplético dos distritos de São Paulo"></div>
+  <aside class="painel">
+    <section>
+      <h2>Maiores altas <span class="janela-rotulo">12m</span></h2>
+      <ol id="ranking-altas" class="ranking"></ol>
+    </section>
+    <section>
+      <h2>Maiores quedas <span class="janela-rotulo">12m</span></h2>
+      <ol id="ranking-quedas" class="ranking"></ol>
+    </section>
+    <p class="nota" id="nota-ranking">Valorização do preço/m² fechado (ITBI),
+      janelas móveis de 3 meses; só bairros com amostra suficiente.</p>
+  </aside>
+</main>
+
+<div id="legenda" class="legenda" aria-hidden="true"></div>
+<div id="tooltip" class="tooltip" hidden></div>
+<footer class="rodape" id="rodape"></footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>window.RADAR_ESTATICO = true;</script>
+<script src="app.js?v=17305964"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Dados (583 MB) — reconstruídos pelos scripts de coleta, nunca versionados
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Credenciais
+.env
+*.key
+
+# Config local do Claude Code (caminhos da máquina, permissões locais)
+.claude/settings.local.json
+
+# Sistema
+.DS_Store
+Thumbs.db

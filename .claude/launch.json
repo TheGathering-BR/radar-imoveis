@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "radar-dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["web/app.py"],
+      "port": 8010
+    },
+    {
+      "name": "radar-estatico",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8011", "-d", "docs"],
+      "port": 8011
+    }
+  ]
+}
