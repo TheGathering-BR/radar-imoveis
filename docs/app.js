@@ -6,10 +6,14 @@ const RAMPA_AZUL = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#1c5
 const RAMPA_AQUA = ["#d2f1e3", "#a6e3c8", "#74d1aa", "#3fbd8a", "#1baf7a", "#12855c", "#0a5e40"];
 // Divergente vermelho (queda) ↔ cinza neutro ↔ azul (alta).
 const RAMPA_DIVERGENTE = ["#b13332", "#e34948", "#f2a3a2", "#f0efec", "#9ec5f4", "#3987e5", "#184f95"];
+// Gap pedido×ITBI, do mais negativo ao mais positivo: azul escuro = fecha bem
+// abaixo do pedido, cinza = fecha perto do pedido, vermelho = fecha acima.
+const RAMPA_GAP = ["#184f95", "#3987e5", "#6da7ec", "#9ec5f4", "#f0efec", "#e34948", "#b13332"];
 const COR_SEM_DADOS = getComputedStyle(document.documentElement)
   .getPropertyValue("--hairline").trim() || "#e1e0d9";
 
 const MIN_AMOSTRAS_RANKING = 30; // amostra ITBI (3 meses) p/ entrar no ranking
+const MIN_ANUNCIOS_GAP = 3;      // anúncios mínimos p/ colorir o gap pedido×ITBI
 
 const METRICAS = {
   anuncios: { rotulo: "Pedido — mediana R$/m²", rampa: RAMPA_AZUL,
@@ -18,6 +22,12 @@ const METRICAS = {
               valor: p => p.itbi_mediana },
   var:      { rotulo: "Valorização (ITBI)", rampa: RAMPA_DIVERGENTE,
               valor: (p, janela) => p.var ? p.var[janela] : null },
+  // Quanto o preço que FECHA (ITBI) fica abaixo do que se PEDE (anúncios).
+  // Exige amostra mínima de anúncios: com 1 ou 2, o gap é ruído.
+  gap:      { rotulo: "Pedido vs ITBI", rampa: RAMPA_GAP,
+              valor: p => (p.anuncios_n >= MIN_ANUNCIOS_GAP
+                           && p.gap !== null && p.gap !== undefined)
+                          ? p.gap : null },
 };
 
 const estado = { metrica: "anuncios", janela: "m12", classe: "todos", dados: null };
@@ -51,6 +61,20 @@ function calcularClasses() {
     const passo = amp / 3;
     return { breaks: [-2 * passo, -passo, -passo / 4, passo / 4, passo, 2 * passo],
              rampa: m.rampa };
+  }
+  if (estado.metrica === "gap") {
+    // Divergente com pivô no zero (a troca de sinal inverte o significado),
+    // mas com braços assimétricos: quase todo bairro é positivo, então uma
+    // escala simétrica desperdiçaria metade da rampa.
+    const neg = valores.filter(v => v < 0).sort((a, b) => a - b);
+    const pos = valores.filter(v => v > 0).sort((a, b) => a - b);
+    const breaks = [];
+    for (let i = 1; i <= 4; i++) {  // 4 faixas dentro dos negativos
+      breaks.push(neg.length ? neg[Math.floor((i / 5) * (neg.length - 1))] : -1);
+    }
+    breaks.push(0);
+    breaks.push(pos.length ? pos[Math.floor(pos.length / 2)] : 1);
+    return { breaks, rampa: m.rampa };
   }
   return { breaks: quantis(valores, m.rampa.length), rampa: m.rampa };
 }
@@ -87,9 +111,12 @@ function htmlTooltip(p) {
   const v = p.var ? p.var[estado.janela] : null;
   linhas.push(["Valorização " + jan,
     v !== null && v !== undefined ? fmtPct(v) : "amostra insuficiente", ""]);
-  linhas.push(["Desconto típico",
-    p.desconto !== null && p.desconto !== undefined
-      ? p.desconto.toFixed(0) + "% abaixo do pedido" : "—", ""]);
+  const gap = p.gap;
+  linhas.push(["Pedido vs ITBI",
+    gap !== null && gap !== undefined
+      ? (gap <= 0 ? `${fmtPct(gap)} — fecha abaixo do pedido`
+                  : `${fmtPct(gap)} — fecha acima do pedido`)
+      : "—", ""]);
   return `<h3>${p.nome}</h3><div class="regiao">Zona ${p.regiao || "—"}</div>
     <table>${linhas.map(([k, v2, n]) =>
       `<tr><td>${k}</td><td>${v2}${n ? ` <span class="amostra">· ${n}</span>` : ""}</td></tr>`
@@ -112,11 +139,13 @@ function renderLegenda(classes) {
   const el = document.getElementById("legenda");
   if (!el) return;  // o controle só existe depois que o mapa é criado
   const m = METRICAS[estado.metrica];
-  const eVar = estado.metrica === "var";
-  const fmt = eVar ? fmtPct : v => "R$ " + fmtReal.format(v);
-  const titulo = eVar
+  const ePct = estado.metrica === "var" || estado.metrica === "gap";
+  const fmt = ePct ? fmtPct : v => "R$ " + fmtReal.format(v);
+  const titulo = estado.metrica === "var"
     ? m.rotulo + " — " + estado.janela.replace("m", "") + " meses"
-    : m.rotulo;
+    : estado.metrica === "gap"
+      ? "ITBI vs pedido (− = fecha abaixo)"
+      : m.rotulo;
   const vistos = new Set();
   const faixas = classes.rampa.flatMap((cor, i) => {
     let rotulo;
@@ -132,15 +161,21 @@ function renderLegenda(classes) {
   });
   faixas.push(`<div class="faixa"><span class="cor" style="background:${COR_SEM_DADOS}"></span>
                <span class="rotulo">sem dados</span></div>`);
+  if (estado.metrica === "gap") {
+    faixas.push(`<div class="nota-legenda">A diferença não é
+      só negociação: a área do ITBI vem do cadastro IPTU e inclui áreas comuns,
+      o que já derruba o R$/m² fechado. Compare bairros entre si, não o valor
+      absoluto.</div>`);
+  }
   const d = estado.dados;
   if (d.classe !== "todos") {
     const usaItbi = estado.metrica !== "anuncios";
     if (usaItbi && d.classe_itbi !== d.classe) {
-      faixas.push(`<div class="rotulo" style="margin-top:6px">Classe:
+      faixas.push(`<div class="nota-legenda">Classe:
         ${ROTULOS_CLASSE[d.classe]} — o ITBI não distingue essa classe;
         exibindo ${ROTULOS_CLASSE[d.classe_itbi]} (aproximação).</div>`);
     } else {
-      faixas.push(`<div class="rotulo" style="margin-top:6px">Classe:
+      faixas.push(`<div class="nota-legenda">Classe:
         somente ${ROTULOS_CLASSE[d.classe]}.</div>`);
     }
   }
@@ -269,6 +304,13 @@ async function iniciar() {
   ajustarMapa();
   requestAnimationFrame(ajustarMapa);
   window.addEventListener("load", ajustarMapa, { once: true });
+  // Rotação de tela no celular muda a proporção do container: sem reenquadrar,
+  // o mapa fica cortado.
+  let timerResize;
+  window.addEventListener("resize", () => {
+    clearTimeout(timerResize);
+    timerResize = setTimeout(ajustarMapa, 250);
+  });
 
   document.querySelectorAll(".botao-metrica").forEach(b =>
     b.addEventListener("click", () => {
@@ -290,10 +332,9 @@ async function iniciar() {
   const d = estado.dados;
   document.getElementById("rodape").textContent =
     `Fechado (ITBI): transações até ${fmtMes(d.mes_itbi)} · ` +
-    `Pedido: anúncios capturados em ${fmtMes(d.mes_anuncios)} · ` +
-    `Fontes: Prefeitura de São Paulo (ITBI, GeoSampa) e VivaReal · ` +
-    `Medianas por distrito; "desconto típico" embute diferenças de metodologia ` +
-    `entre as duas séries — compare bairros, não valores absolutos.`;
+    `Pedido: anúncios de ${fmtMes(d.mes_anuncios)} · ` +
+    `Fontes: Prefeitura de SP (ITBI, GeoSampa), VivaReal, ZAP e Imovelweb · ` +
+    `Medianas por distrito — compare bairros, não valores absolutos.`;
 
   render();
 }

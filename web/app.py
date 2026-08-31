@@ -108,9 +108,11 @@ def _montar_payload(classe: str) -> dict:
         med_itbi = statistics.median(amostras_itbi) if amostras_itbi else None
         anu = anuncios.get(bid, {})
         med_anu, n_anu = anu.get("mediana"), anu.get("n", 0)
-        desconto = None
+        # Preço fechado (ITBI) em relação ao pedido, em %.
+        # NEGATIVO = fecha abaixo do que se pede (caso comum).
+        gap = None
         if med_itbi and med_anu:
-            desconto = (1.0 - med_itbi / med_anu) * 100.0
+            gap = (med_itbi / med_anu - 1.0) * 100.0
         features.append({
             "type": "Feature",
             "properties": {
@@ -122,7 +124,7 @@ def _montar_payload(classe: str) -> dict:
                 "anuncios_mediana": med_anu,
                 "anuncios_n": n_anu,
                 "var": variacoes.get(bid, {}),
-                "desconto": desconto,
+                "gap": gap,
             },
             "geometry": mapping(g),
         })

@@ -150,6 +150,12 @@ body {
   flex: none;
 }
 .legenda .rotulo { color: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+.nota-legenda {
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: 6px;
+}
 
 .tooltip {
   position: fixed;
@@ -253,9 +259,15 @@ body {
 }
 
 @media (max-width: 800px) {
+  /* A página inteira passa a rolar. Com `height:100%` no body, o conteúdo
+     rolava por dentro e o rodapé ficava preso na tela — comendo espaço e
+     escondendo que havia ranking abaixo do mapa. Agora ele fica no fim do
+     documento, alcançável ao rolar. */
+  html, body { height: auto; }
+  body { min-height: 100%; }
   /* Em coluna, `flex:1` não dá altura ao mapa (o container não tem altura
      definida) e ele colapsa para 0 — daí a altura explícita. */
-  .conteudo { flex-direction: column; overflow-y: auto; }
+  .conteudo { flex-direction: column; overflow-y: visible; }
   #mapa { flex: none; height: 60vh; min-height: 300px; }
   .painel {
     width: 100%;
@@ -263,6 +275,21 @@ body {
     border-top: 1px solid var(--hairline);
     overflow-y: visible;
   }
-  .legenda { max-width: 200px; font-size: 12px; }
+  /* Com a nota explicativa a legenda chegava a ocupar 3/4 do mapa no celular:
+     limita a altura e deixa rolar por dentro (o Leaflet já não recebe o
+     scroll graças ao disableScrollPropagation). */
+  .legenda {
+    max-width: 175px;
+    font-size: 11px;
+    max-height: 30vh;
+    overflow-y: auto;
+    padding: 7px 9px;
+  }
+  .legenda .titulo { margin-bottom: 4px; }
+  .legenda .faixa { gap: 5px; margin: 1px 0; }
+  .legenda .cor { width: 13px; height: 10px; }
+  .legenda .rotulo { font-size: 11px; }
+  .nota-legenda { font-size: 10.5px; }
   .topo { gap: 8px; padding: 8px 12px; }
+  .rodape { font-size: 11px; line-height: 1.4; padding: 8px 12px 14px; }
 }

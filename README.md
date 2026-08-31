@@ -11,7 +11,8 @@ Dashboard de análise do mercado imobiliário de São Paulo (capital), cruzando
 
 - Qual a mediana de R$/m² de cada um dos 96 distritos — fechado e pedido
 - Quanto cada bairro valorizou em 3, 6, 12 ou 24 meses
-- Qual o "desconto típico" entre o que se pede e o que efetivamente fecha
+- Quanto o preço que **fecha** difere do que se **pede** em cada bairro (aba
+  "Pedido vs ITBI": negativo = fecha abaixo do pedido)
 - Se um anúncio específico está caro ou barato para o bairro e o perfil dele
 
 Tudo separado por classe: apartamento, casa, casa de vila/condomínio, cobertura
@@ -69,11 +70,18 @@ Mão (viável, mas cards sem coordenadas — geocodificação fraca).
 python web/app.py   # dashboard em http://127.0.0.1:8010
 ```
 
-O dashboard mostra o coroplético dos 96 distritos com toggle entre preço/m²
-pedido (anúncios), fechado (ITBI) e valorização % (janelas de 3/6/12/24
-meses), tooltip com as duas medianas + amostras + desconto típico, e ranking
-lateral de altas/quedas (só bairros com ≥30 vendas na janela de 3 meses).
-O payload da API é cacheado e invalidado quando `radar.db` muda.
+O dashboard mostra o coroplético dos 96 distritos com quatro métricas —
+preço/m² pedido (anúncios), fechado (ITBI), valorização % (janelas de
+3/6/12/24 meses) e o gap **Pedido vs ITBI** — tooltip com as duas medianas +
+amostras + gap, e ranking lateral de altas/quedas (só bairros com ≥30 vendas
+na janela de 3 meses). O payload da API é cacheado e invalidado quando
+`radar.db` muda.
+
+O gap é `(ITBI / pedido − 1) × 100`: **negativo significa que fecha abaixo do
+que se pede**. Só é colorido em bairros com ao menos 3 anúncios, porque com 1
+ou 2 o número é ruído. A escala é divergente com pivô no zero, mas de braços
+assimétricos — quase todo bairro é negativo, e uma escala simétrica
+desperdiçaria metade da rampa.
 
 A aba **Analisar anúncio** recebe o link de um anúncio de venda e devolve o
 veredito "X% acima/abaixo da mediana" comparando com anúncios de perfil
@@ -136,9 +144,31 @@ com preço fechado.
   declarado quando a amostra da classe é insuficiente).
 - **Nível do preço/m² ITBI é estruturalmente menor que o de anúncios**: a área
   construída vem do cadastro IPTU (inclui rateio de áreas comuns) e o valor é
-  o declarado. A série é consistente no tempo e entre bairros, mas o "desconto
-  típico" (módulo 2) embute essa diferença estrutural, além da negociação —
+  o declarado. A série é consistente no tempo e entre bairros, mas o gap
+  "Pedido vs ITBI" embute essa diferença estrutural, além da negociação —
   interpretar como métrica relativa entre bairros, não como desconto absoluto.
+
+## Atualizar os dados publicados
+
+Os dados brutos ficam só na máquina (`data/`, ~580 MB, fora do git). O que vai
+para o GitHub são as medianas agregadas por bairro. O ciclo completo:
+
+```bash
+python scripts/atualizar_itbi.py                                             # ITBI (mensal)
+python scripts/coletar_anuncios.py --portal vivareal   --tipos apartamento casa --paginas 12
+python scripts/coletar_anuncios.py --portal zapimoveis --tipos apartamento casa --paginas 12
+python scripts/coletar_anuncios.py --portal imovelweb  --tipos apartamento casa --paginas 8
+python scripts/build_estatico.py                                             # regenera docs/
+git add docs && git commit -m "atualiza dados" && git push
+```
+
+Cada script já recalcula os agregados ao terminar, então o `build_estatico.py`
+sempre pega o estado mais recente do banco. As coletas são incrementais: o que
+já está no banco é preservado e só o preço/`ultima_captura` é atualizado.
+
+O ITBI é publicado mensalmente pela Prefeitura; os anúncios rotacionam a cada
+rodada. Rodar as coletas com frequência aumenta a amostra por bairro — é assim
+que bairros com poucos anúncios saem do "sem dados".
 
 ## Publicar o mapa (GitHub Pages)
 
