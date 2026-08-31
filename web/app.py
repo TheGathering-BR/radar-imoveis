@@ -11,6 +11,7 @@ import json
 import statistics
 import sys
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -30,6 +31,10 @@ SIMPLIFICACAO_GRAUS = 0.0004
 MIN_AMOSTRAS_ITBI_MES = 1000  # p/ escolher o mês de referência municipal
 
 CLASSES_VALIDAS = ("todos", "apartamento", "casa", "casa_vila", "cobertura")
+# Anúncios entram na mediana por RECÊNCIA, não por mês-calendário: um anúncio
+# capturado semanas atrás segue sendo oferta ativa. Com bucket mensal, uma
+# coleta parcial no dia 1º esvaziaria o mapa inteiro.
+JANELA_ANUNCIOS_DIAS = 90
 # O ITBI (uso IPTU) só separa vertical/horizontal: vila e cobertura caem na
 # classe-mãe, e o payload avisa para o frontend exibir a ressalva.
 CLASSE_ITBI_EQUIVALENTE = {"casa_vila": "casa", "cobertura": "apartamento"}
@@ -82,19 +87,32 @@ def _montar_payload(classe: str) -> dict:
         )
     }
 
-    mes_anuncios = conn.execute(
-        "SELECT MAX(mes) FROM agregados_anuncios"
+    # Mediana pedida: anúncios vistos nos últimos JANELA_ANUNCIOS_DIAS,
+    # deduplicados por imóvel (o mesmo apartamento em dois portais conta uma
+    # vez, ficando a captura mais recente).
+    corte = (datetime.now(timezone.utc) - timedelta(days=JANELA_ANUNCIOS_DIAS)) \
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+    filtro_classe_anun = "" if classe == "todos" else " AND classe = ?"
+    params_anun = [CIDADE_ATIVA, corte] + ([] if classe == "todos" else [classe])
+    por_bairro = defaultdict(dict)  # bairro -> imóvel -> preço/m²
+    for bid, fp, aid, pm2 in conn.execute(
+        f"""SELECT bairro_id, fingerprint, id, preco_m2 FROM anuncios
+            WHERE cidade = ? AND elegivel_mediana = 1
+              AND bairro_id IS NOT NULL AND ultima_captura >= ?
+              {filtro_classe_anun}
+            ORDER BY ultima_captura ASC""",
+        params_anun,
+    ):
+        por_bairro[bid][fp or f"id{aid}"] = pm2
+    anuncios = {
+        bid: {"mediana": statistics.median(imoveis.values()), "n": len(imoveis)}
+        for bid, imoveis in por_bairro.items()
+    }
+    captura_anuncios = conn.execute(
+        """SELECT MAX(ultima_captura) FROM anuncios
+           WHERE cidade = ? AND bairro_id IS NOT NULL""",
+        (CIDADE_ATIVA,),
     ).fetchone()[0]
-    anuncios = {}
-    if mes_anuncios:
-        anuncios = {
-            bid: {"mediana": med, "n": n}
-            for bid, med, n in conn.execute(
-                """SELECT bairro_id, mediana_preco_m2, n_amostras
-                   FROM agregados_anuncios WHERE mes = ? AND classe = ?""",
-                (mes_anuncios, classe),
-            )
-        }
 
     features = []
     for bid, nome, regiao, geom_json in conn.execute(
@@ -135,7 +153,8 @@ def _montar_payload(classe: str) -> dict:
         "classe": classe,
         "classe_itbi": classe_itbi,  # difere quando o ITBI só tem a classe-mãe
         "mes_itbi": mes_itbi,
-        "mes_anuncios": mes_anuncios,
+        "captura_anuncios": captura_anuncios,
+        "janela_anuncios_dias": JANELA_ANUNCIOS_DIAS,
         "geojson": {"type": "FeatureCollection", "features": features},
     }
 

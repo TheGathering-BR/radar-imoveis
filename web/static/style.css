@@ -85,7 +85,8 @@ body {
   padding: 5px 11px;
   cursor: pointer;
 }
-.grupo button:hover { background: var(--hairline); }
+.grupo button:hover:not(:disabled) { background: var(--hairline); }
+.grupo button:disabled { opacity: 0.4; cursor: default; }
 .grupo button.ativo {
   color: var(--surface-1);
   background: var(--acento);

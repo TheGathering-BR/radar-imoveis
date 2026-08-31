@@ -13,6 +13,7 @@ const COR_SEM_DADOS = getComputedStyle(document.documentElement)
   .getPropertyValue("--hairline").trim() || "#e1e0d9";
 
 const MIN_AMOSTRAS_RANKING = 30; // amostra ITBI (3 meses) p/ entrar no ranking
+const MIN_ANUNCIOS_RANKING = 5;  // anúncios mínimos p/ ranquear preço pedido
 const MIN_ANUNCIOS_GAP = 3;      // anúncios mínimos p/ colorir o gap pedido×ITBI
 
 const METRICAS = {
@@ -41,6 +42,9 @@ let mapa, camada;
 const fmtReal = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
 const fmtPct = v => (v > 0 ? "+" : "") + v.toFixed(1).replace(".", ",") + "%";
 const fmtMes = m => m ? m.split("-").reverse().join("/") : "—";
+const fmtData = iso => iso
+  ? iso.slice(0, 10).split("-").reverse().join("/")
+  : "—";
 
 function quantis(valores, n) {
   const v = [...valores].sort((a, b) => a - b);
@@ -183,28 +187,86 @@ function renderLegenda(classes) {
 }
 
 /* ---------- ranking ---------- */
-function renderRanking() {
-  const feats = estado.dados.geojson.features
-    .map(f => f.properties)
-    .filter(p => p.var && p.var[estado.janela] !== null
-                 && p.var[estado.janela] !== undefined
-                 && p.itbi_n >= MIN_AMOSTRAS_RANKING)
-    .sort((a, b) => b.var[estado.janela] - a.var[estado.janela]);
+// O ranking acompanha a métrica escolhida no mapa. Cada uma tem seu próprio
+// critério de ordenação, amostra mínima e rótulos.
+const RANKINGS = {
+  anuncios: {
+    topo: "Mais caros", base: "Mais baratos", ordem: "desc",
+    valor: p => p.anuncios_mediana,
+    apto: p => p.anuncios_n >= MIN_ANUNCIOS_RANKING,
+    fmt: v => "R$ " + fmtReal.format(v),
+    secundario: p => p.anuncios_n + " anún.",
+    nota: () => `Mediana do preço/m² pedido; só bairros com ao menos
+                 ${MIN_ANUNCIOS_RANKING} anúncios.`,
+  },
+  itbi: {
+    topo: "Mais caros", base: "Mais baratos", ordem: "desc",
+    valor: p => p.itbi_mediana,
+    apto: p => p.itbi_n >= MIN_AMOSTRAS_RANKING,
+    fmt: v => "R$ " + fmtReal.format(v),
+    secundario: p => p.itbi_n + " vendas",
+    nota: () => `Mediana do preço/m² fechado (ITBI) na janela de 3 meses;
+                 só bairros com ao menos ${MIN_AMOSTRAS_RANKING} vendas.`,
+  },
+  var: {
+    topo: "Maiores altas", base: "Maiores quedas", ordem: "desc",
+    janela: true,
+    valor: (p, janela) => (p.var ? p.var[janela] : null),
+    apto: p => p.itbi_n >= MIN_AMOSTRAS_RANKING,
+    fmt: fmtPct,
+    classe: v => (v >= 0 ? "pos" : "neg"),
+    secundario: p => "R$ " + fmtReal.format(p.itbi_mediana),
+    nota: () => `Valorização do preço/m² fechado (ITBI), janelas móveis de
+                 3 meses; só bairros com amostra suficiente.`,
+  },
+  gap: {
+    // ascendente: o mais negativo (fecha bem abaixo do pedido) vem primeiro
+    topo: "Fecham mais abaixo do pedido", base: "Fecham mais perto do pedido",
+    ordem: "asc",
+    valor: p => p.gap,
+    apto: p => p.anuncios_n >= MIN_ANUNCIOS_GAP,
+    fmt: fmtPct,
+    // sem cor por sinal: aqui negativo não é "ruim", é só direção — e verde/
+    // vermelho contradiria o azul/vermelho que o mapa usa para os mesmos valores
+    classe: null,
+    secundario: p => "R$ " + fmtReal.format(p.anuncios_mediana) + " ped.",
+    nota: () => `Preço fechado em relação ao pedido; negativo = fecha abaixo.
+                 Embute diferença de metodologia entre as séries.`,
+  },
+};
 
-  document.querySelectorAll(".janela-rotulo").forEach(el =>
-    el.textContent = estado.janela.replace("m", "") + "m");
+function renderRanking() {
+  const cfg = RANKINGS[estado.metrica];
+  const lista = estado.dados.geojson.features
+    .map(f => f.properties)
+    .filter(p => {
+      const v = cfg.valor(p, estado.janela);
+      return v !== null && v !== undefined && cfg.apto(p);
+    })
+    .sort((a, b) => {
+      const va = cfg.valor(a, estado.janela), vb = cfg.valor(b, estado.janela);
+      return cfg.ordem === "asc" ? va - vb : vb - va;
+    });
+
+  const sufixoJanela = cfg.janela
+    ? ` <span class="janela-rotulo">${estado.janela.replace("m", "")}m</span>`
+    : "";
+  document.getElementById("titulo-topo").innerHTML = cfg.topo + sufixoJanela;
+  document.getElementById("titulo-base").innerHTML = cfg.base + sufixoJanela;
+  document.getElementById("nota-ranking").textContent = cfg.nota();
 
   const item = p => {
-    const v = p.var[estado.janela];
+    const v = cfg.valor(p, estado.janela);
+    const classe = cfg.classe ? cfg.classe(v) : "";
     return `<li data-id="${p.id}">
       <span class="nome">${p.nome}</span>
-      <span class="mediana">R$ ${fmtReal.format(p.itbi_mediana)}</span>
-      <span class="delta ${v >= 0 ? "pos" : "neg"}">${fmtPct(v)}</span></li>`;
+      <span class="mediana">${cfg.secundario(p)}</span>
+      <span class="delta ${classe}">${cfg.fmt(v)}</span></li>`;
   };
   document.getElementById("ranking-altas").innerHTML =
-    feats.slice(0, 10).map(item).join("");
+    lista.slice(0, 10).map(item).join("");
   document.getElementById("ranking-quedas").innerHTML =
-    feats.slice(-10).reverse().map(item).join("");
+    lista.slice(-10).reverse().map(item).join("");
 
   document.querySelectorAll(".ranking li").forEach(li =>
     li.addEventListener("click", () => focarBairro(+li.dataset.id)));
@@ -228,6 +290,13 @@ function render() {
   // polígonos "hoverados" voltariam para o estilo da métrica anterior.
   camada.options.style = estilo;
   camada.setStyle(estilo);
+  // A janela só afeta a valorização: nas demais métricas os botões ficariam
+  // clicáveis sem efeito nenhum.
+  const usaJanela = estado.metrica === "var";
+  document.querySelectorAll(".botao-janela").forEach(b => {
+    b.disabled = !usaJanela;
+    b.title = usaJanela ? "" : "A janela de tempo só se aplica à Valorização";
+  });
   renderLegenda(classes);
   renderRanking();
 }
@@ -332,7 +401,8 @@ async function iniciar() {
   const d = estado.dados;
   document.getElementById("rodape").textContent =
     `Fechado (ITBI): transações até ${fmtMes(d.mes_itbi)} · ` +
-    `Pedido: anúncios de ${fmtMes(d.mes_anuncios)} · ` +
+    `Pedido: anúncios ativos até ${fmtData(d.captura_anuncios)} ` +
+    `(janela de ${d.janela_anuncios_dias} dias) · ` +
     `Fontes: Prefeitura de SP (ITBI, GeoSampa), VivaReal, ZAP e Imovelweb · ` +
     `Medianas por distrito — compare bairros, não valores absolutos.`;
 
