@@ -64,12 +64,16 @@ def _montar_payload(classe: str) -> dict:
     # Mediana ITBI: janela de 3 meses terminando no mês de referência.
     # 'todos' = residencial (classe atribuída); nunca inclui garagem/loja/etc.
     itbi = defaultdict(list)
+    # Ágio do valor declarado sobre o Valor Venal de Referência (piso de
+    # tributação da Prefeitura), nas mesmas transações da mediana ITBI.
+    agio = defaultdict(list)
     marcas = ",".join("?" * len(meses3))
     filtro_classe = "AND classe IS NOT NULL" if classe_itbi == "todos" \
         else "AND classe = ?"
     params = [CIDADE_ATIVA, *meses3] + ([] if classe_itbi == "todos" else [classe_itbi])
-    for bid, pm2 in conn.execute(
-        f"""SELECT bairro_id, preco_m2 FROM transacoes
+    for bid, pm2, valor, venal in conn.execute(
+        f"""SELECT bairro_id, preco_m2, valor_transacao, valor_venal_ref
+            FROM transacoes
             WHERE cidade = ? AND elegivel_mediana = 1
               AND bairro_id IS NOT NULL
               AND substr(data_transacao, 1, 7) IN ({marcas})
@@ -77,6 +81,8 @@ def _montar_payload(classe: str) -> dict:
         params,
     ):
         itbi[bid].append(pm2)
+        if venal and venal > 0 and valor:
+            agio[bid].append((valor / venal - 1.0) * 100.0)
 
     variacoes = {
         bid: {"m3": v3, "m6": v6, "m12": v12, "m24": v24}
@@ -124,6 +130,8 @@ def _montar_payload(classe: str) -> dict:
         )
         amostras_itbi = itbi.get(bid, [])
         med_itbi = statistics.median(amostras_itbi) if amostras_itbi else None
+        amostras_agio = agio.get(bid, [])
+        med_agio = statistics.median(amostras_agio) if amostras_agio else None
         anu = anuncios.get(bid, {})
         med_anu, n_anu = anu.get("mediana"), anu.get("n", 0)
         # Preço fechado (ITBI) em relação ao pedido, em %.
@@ -139,6 +147,8 @@ def _montar_payload(classe: str) -> dict:
                 "regiao": regiao,
                 "itbi_mediana": med_itbi,
                 "itbi_n": len(amostras_itbi),
+                "agio_venal": med_agio,
+                "agio_n": len(amostras_agio),
                 "anuncios_mediana": med_anu,
                 "anuncios_n": n_anu,
                 "var": variacoes.get(bid, {}),

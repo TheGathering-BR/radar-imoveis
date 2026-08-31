@@ -9,6 +9,9 @@ const RAMPA_DIVERGENTE = ["#b13332", "#e34948", "#f2a3a2", "#f0efec", "#9ec5f4",
 // Gap pedido×ITBI, do mais negativo ao mais positivo: azul escuro = fecha bem
 // abaixo do pedido, cinza = fecha perto do pedido, vermelho = fecha acima.
 const RAMPA_GAP = ["#184f95", "#3987e5", "#6da7ec", "#9ec5f4", "#f0efec", "#e34948", "#b13332"];
+// Sequencial violeta (hue livre — azul e verde-água já são pedido e ITBI):
+// ágio do valor declarado sobre o venal de referência.
+const RAMPA_VIOLETA = ["#e6e2f8", "#cbc3ef", "#b0a4e6", "#9085e9", "#6f61c9", "#524897", "#372f68"];
 const COR_SEM_DADOS = getComputedStyle(document.documentElement)
   .getPropertyValue("--hairline").trim() || "#e1e0d9";
 
@@ -25,7 +28,13 @@ const METRICAS = {
               valor: (p, janela) => p.var ? p.var[janela] : null },
   // Quanto o preço que FECHA (ITBI) fica abaixo do que se PEDE (anúncios).
   // Exige amostra mínima de anúncios: com 1 ou 2, o gap é ruído.
-  gap:      { rotulo: "Pedido vs ITBI", rampa: RAMPA_GAP,
+  // Quanto o valor declarado supera o Valor Venal de Referência (piso de
+  // tributação). Perto de zero = declarado no piso.
+  agio:     { rotulo: "Declarado vs Venal", rampa: RAMPA_VIOLETA,
+              valor: p => (p.agio_n >= MIN_AMOSTRAS_RANKING
+                           && p.agio_venal !== null && p.agio_venal !== undefined)
+                          ? p.agio_venal : null },
+  gap:      { rotulo: "Pedido vs Fechado (ITBI)", rampa: RAMPA_GAP,
               valor: p => (p.anuncios_n >= MIN_ANUNCIOS_GAP
                            && p.gap !== null && p.gap !== undefined)
                           ? p.gap : null },
@@ -115,8 +124,11 @@ function htmlTooltip(p) {
   const v = p.var ? p.var[estado.janela] : null;
   linhas.push(["Valorização " + jan,
     v !== null && v !== undefined ? fmtPct(v) : "amostra insuficiente", ""]);
+  linhas.push(["Declarado vs venal",
+    p.agio_venal !== null && p.agio_venal !== undefined
+      ? fmtPct(p.agio_venal) : "—", ""]);
   const gap = p.gap;
-  linhas.push(["Pedido vs ITBI",
+  linhas.push(["Pedido vs fechado",
     gap !== null && gap !== undefined
       ? (gap <= 0 ? `${fmtPct(gap)} — fecha abaixo do pedido`
                   : `${fmtPct(gap)} — fecha acima do pedido`)
@@ -143,13 +155,15 @@ function renderLegenda(classes) {
   const el = document.getElementById("legenda");
   if (!el) return;  // o controle só existe depois que o mapa é criado
   const m = METRICAS[estado.metrica];
-  const ePct = estado.metrica === "var" || estado.metrica === "gap";
+  const ePct = ["var", "gap", "agio"].includes(estado.metrica);
   const fmt = ePct ? fmtPct : v => "R$ " + fmtReal.format(v);
   const titulo = estado.metrica === "var"
     ? m.rotulo + " — " + estado.janela.replace("m", "") + " meses"
     : estado.metrica === "gap"
       ? "ITBI vs pedido (− = fecha abaixo)"
-      : m.rotulo;
+      : estado.metrica === "agio"
+        ? "Declarado sobre o venal de referência"
+        : m.rotulo;
   const vistos = new Set();
   const faixas = classes.rampa.flatMap((cor, i) => {
     let rotulo;
@@ -165,11 +179,16 @@ function renderLegenda(classes) {
   });
   faixas.push(`<div class="faixa"><span class="cor" style="background:${COR_SEM_DADOS}"></span>
                <span class="rotulo">sem dados</span></div>`);
+  if (estado.metrica === "agio") {
+    faixas.push(`<div class="nota-legenda">O venal de referência é o piso que a
+      Prefeitura usa para tributar. Bairros perto de 0% concentram declarações
+      no piso; os mais altos declaram bem acima dele.</div>`);
+  }
   if (estado.metrica === "gap") {
-    faixas.push(`<div class="nota-legenda">A diferença não é
-      só negociação: a área do ITBI vem do cadastro IPTU e inclui áreas comuns,
-      o que já derruba o R$/m² fechado. Compare bairros entre si, não o valor
-      absoluto.</div>`);
+    faixas.push(`<div class="nota-legenda">Quase nada disso é negociação: a
+      área do ITBI (cadastro IPTU) é cerca de <b>1,7× a área anunciada</b>,
+      medido nos dados, e isso sozinho explica a maior parte do gap. Compare
+      bairros entre si, não o valor absoluto.</div>`);
   }
   const d = estado.dados;
   if (d.classe !== "todos") {
@@ -218,6 +237,16 @@ const RANKINGS = {
     secundario: p => "R$ " + fmtReal.format(p.itbi_mediana),
     nota: () => `Valorização do preço/m² fechado (ITBI), janelas móveis de
                  3 meses; só bairros com amostra suficiente.`,
+  },
+  agio: {
+    topo: "Maior ágio sobre o venal", base: "Declaram perto do piso venal",
+    ordem: "desc",
+    valor: p => p.agio_venal,
+    apto: p => p.agio_n >= MIN_AMOSTRAS_RANKING,
+    fmt: fmtPct,
+    secundario: p => p.agio_n + " vendas",
+    nota: () => `Mediana de quanto o valor declarado supera o Valor Venal de
+                 Referência, nas mesmas vendas da janela de 3 meses.`,
   },
   gap: {
     // ascendente: o mais negativo (fecha bem abaixo do pedido) vem primeiro
@@ -366,20 +395,31 @@ async function iniciar() {
 
   // O fetch pode resolver antes do CSS/layout: sem isso o fitBounds vê o
   // container com 0x0 e cai no zoom 0 (mapa "cinza").
+  // Depois que o usuário navega no mapa, parar de reenquadrar sozinho.
+  // Só eventos de interação real entram aqui — fitBounds programático não
+  // dispara nenhum deles.
+  let usuarioMexeu = false;
+  ["dragstart", "wheel", "mousedown", "touchstart"].forEach(ev =>
+    mapa.on(ev, () => { usuarioMexeu = true; }));
+
   const ajustarMapa = () => {
     mapa.invalidateSize();
-    mapa.fitBounds(camada.getBounds(), { padding: [8, 8] });
+    if (!usuarioMexeu) mapa.fitBounds(camada.getBounds(), { padding: [8, 8] });
   };
   ajustarMapa();
-  requestAnimationFrame(ajustarMapa);
-  window.addEventListener("load", ajustarMapa, { once: true });
-  // Rotação de tela no celular muda a proporção do container: sem reenquadrar,
-  // o mapa fica cortado.
-  let timerResize;
-  window.addEventListener("resize", () => {
-    clearTimeout(timerResize);
-    timerResize = setTimeout(ajustarMapa, 250);
-  });
+
+  // O container muda de tamanho por vários motivos além do resize da janela:
+  // rotação de tela, cabeçalho que passa a ocupar duas linhas, troca de aba.
+  // O ResizeObserver pega todos; `resize` da janela só pegava um.
+  if (window.ResizeObserver) {
+    let timer;
+    new ResizeObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(ajustarMapa, 150);
+    }).observe(document.getElementById("mapa"));
+  } else {
+    window.addEventListener("resize", ajustarMapa);
+  }
 
   document.querySelectorAll(".botao-metrica").forEach(b =>
     b.addEventListener("click", () => {

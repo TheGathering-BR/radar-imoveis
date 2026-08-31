@@ -292,5 +292,9 @@ body {
   .legenda .rotulo { font-size: 11px; }
   .nota-legenda { font-size: 10.5px; }
   .topo { gap: 8px; padding: 8px 12px; }
+  /* .controles já quebra linha, mas cada .grupo é um item flex e estourava a
+     largura da tela com 5 métricas — precisa quebrar por dentro também. */
+  .grupo { flex-wrap: wrap; }
+  .grupo button { font-size: 12px; padding: 5px 9px; }
   .rodape { font-size: 11px; line-height: 1.4; padding: 8px 12px 14px; }
 }

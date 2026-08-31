@@ -12,7 +12,7 @@ Dashboard de análise do mercado imobiliário de São Paulo (capital), cruzando
 - Qual a mediana de R$/m² de cada um dos 96 distritos — fechado e pedido
 - Quanto cada bairro valorizou em 3, 6, 12 ou 24 meses
 - Quanto o preço que **fecha** difere do que se **pede** em cada bairro (aba
-  "Pedido vs ITBI": negativo = fecha abaixo do pedido)
+  "Pedido vs Fechado (ITBI)": negativo = fecha abaixo do pedido)
 - Se um anúncio específico está caro ou barato para o bairro e o perfil dele
 
 Tudo separado por classe: apartamento, casa, casa de vila/condomínio, cobertura
@@ -72,7 +72,7 @@ python web/app.py   # dashboard em http://127.0.0.1:8010
 
 O dashboard mostra o coroplético dos 96 distritos com quatro métricas —
 preço/m² pedido (anúncios), fechado (ITBI), valorização % (janelas de
-3/6/12/24 meses) e o gap **Pedido vs ITBI** — tooltip com as duas medianas +
+3/6/12/24 meses) e o gap **Pedido vs Fechado (ITBI)** — tooltip com as duas medianas +
 amostras + gap, e ranking lateral de altas/quedas (só bairros com ≥30 vendas
 na janela de 3 meses). O payload da API é cacheado e invalidado quando
 `radar.db` muda.
@@ -82,6 +82,17 @@ que se pede**. Só é colorido em bairros com ao menos 3 anúncios, porque com 1
 ou 2 o número é ruído. A escala é divergente com pivô no zero, mas de braços
 assimétricos — quase todo bairro é negativo, e uma escala simétrica
 desperdiçaria metade da rampa.
+
+⚠️ **O gap mede muito pouco de negociação.** Comparando as medianas de área
+de apartamento por distrito, a área do ITBI é **1,67× a área anunciada**
+(mediana de 61 distritos com amostra dos dois lados; maior em 59 deles).
+Só isso já produz um preço/m² ~40% menor — praticamente todo o gap observado.
+Use a métrica para ordenar bairros, nunca como "desconto de negociação".
+
+A quinta métrica, **Declarado vs Venal**, compara o valor declarado com o
+Valor Venal de Referência (o piso que a Prefeitura usa para tributar), na
+mesma janela de 3 meses. Mediana da cidade: +26%; 23% das transações são
+declaradas abaixo do piso e 4,7% exatamente nele.
 
 A aba **Analisar anúncio** recebe o link de um anúncio de venda e devolve o
 veredito "X% acima/abaixo da mediana" comparando com anúncios de perfil
@@ -145,7 +156,7 @@ com preço fechado.
 - **Nível do preço/m² ITBI é estruturalmente menor que o de anúncios**: a área
   construída vem do cadastro IPTU (inclui rateio de áreas comuns) e o valor é
   o declarado. A série é consistente no tempo e entre bairros, mas o gap
-  "Pedido vs ITBI" embute essa diferença estrutural, além da negociação —
+  "Pedido vs Fechado (ITBI)" embute essa diferença estrutural, além da negociação —
   interpretar como métrica relativa entre bairros, não como desconto absoluto.
 
 ## Atualizar os dados publicados
