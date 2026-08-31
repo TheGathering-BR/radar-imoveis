@@ -83,7 +83,12 @@ function calcularClasses() {
     .filter(v => v !== null && v !== undefined);
   if (!valores.length) return { breaks: [], rampa: m.rampa };
   if (estado.metrica === "var") {
-    const amp = Math.max(...valores.map(Math.abs));
+    // Amplitude pelo p90 dos valores absolutos, não pelo máximo: um único
+    // bairro extremo (ex.: janela dominada por um empreendimento vendido em
+    // bloco) esticava a escala e jogava todo o resto para o cinza do meio.
+    // Quem passa do teto cai na classe extrema — a legenda diz "acima de X%".
+    const abs = valores.map(Math.abs).sort((a, b) => a - b);
+    const amp = abs[Math.floor(0.9 * (abs.length - 1))] || abs[abs.length - 1] || 1;
     const passo = amp / 3;
     return { breaks: [-2 * passo, -passo, -passo / 4, passo / 4, passo, 2 * passo],
              rampa: m.rampa };

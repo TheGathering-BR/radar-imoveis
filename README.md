@@ -149,8 +149,15 @@ com preço fechado.
   no banco (`elegivel_mediana = 0`), fora da mediana.
 - **Mediana, não média**, por bairro/mês, no eixo do mês da **data de
   transação** (não do pagamento da guia).
-- **Variações 3/6/12/24 meses** comparam janelas móveis de 3 meses (mínimo de
-  5 amostras em cada ponta) para reduzir ruído em bairros com poucas vendas.
+- **Variações 3/6/12/24/36/48/60 meses** comparam janelas móveis de 3 meses
+  (mínimo de 5 amostras em cada ponta) para reduzir ruído em bairros com
+  poucas vendas.
+- **Escala de cor da valorização é robusta a outlier**: a amplitude vem do
+  p90 dos valores absolutos, não do máximo. Um bairro extremo (ex.: Jaguara
+  a +344% em 36m, por uma janela dominada por um empreendimento vendido em
+  bloco a ~R$ 850/m²) esticava a rampa e achatava todos os outros no cinza
+  central. Quem passa do teto cai na classe extrema, e a legenda diz
+  "acima de X%".
 - **Ingestão idempotente**: hash por aba em `ingestoes`; aba inalterada é
   pulada, aba alterada é substituída. Após mudança no parser, rodar com
   `--recarregar`.
