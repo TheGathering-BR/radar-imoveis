@@ -132,11 +132,8 @@ body {
 .delta.neg { color: var(--queda); }
 .nota { color: var(--ink-3); font-size: 12px; line-height: 1.4; }
 
+/* Posicionamento fica por conta do controle do Leaflet (bottomleft). */
 .legenda {
-  position: absolute;
-  left: 12px;
-  bottom: 34px;
-  z-index: 1000;
   background: var(--surface-1);
   border: 1px solid var(--borda);
   border-radius: 8px;
@@ -256,7 +253,16 @@ body {
 }
 
 @media (max-width: 800px) {
-  .conteudo { flex-direction: column; }
-  .painel { width: 100%; border-left: none; border-top: 1px solid var(--hairline); }
-  .legenda { bottom: auto; top: 110px; }
+  /* Em coluna, `flex:1` não dá altura ao mapa (o container não tem altura
+     definida) e ele colapsa para 0 — daí a altura explícita. */
+  .conteudo { flex-direction: column; overflow-y: auto; }
+  #mapa { flex: none; height: 60vh; min-height: 300px; }
+  .painel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--hairline);
+    overflow-y: visible;
+  }
+  .legenda { max-width: 200px; font-size: 12px; }
+  .topo { gap: 8px; padding: 8px 12px; }
 }

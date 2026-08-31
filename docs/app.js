@@ -110,6 +110,7 @@ function moverTooltip(ev) {
 /* ---------- legenda ---------- */
 function renderLegenda(classes) {
   const el = document.getElementById("legenda");
+  if (!el) return;  // o controle só existe depois que o mapa é criado
   const m = METRICAS[estado.metrica];
   const eVar = estado.metrica === "var";
   const fmt = eVar ? fmtPct : v => "R$ " + fmtReal.format(v);
@@ -228,6 +229,19 @@ async function iniciar() {
     maxZoom: 19,
   }).addTo(mapa);
 
+  // A legenda vive como controle do Leaflet: assim fica sempre ancorada ao
+  // canto do mapa, em qualquer viewport (como elemento solto ela se
+  // posicionava contra a página e vazava no layout de coluna do mobile).
+  const controleLegenda = L.control({ position: "bottomleft" });
+  controleLegenda.onAdd = () => {
+    const el = L.DomUtil.create("div", "legenda");
+    el.id = "legenda";
+    L.DomEvent.disableClickPropagation(el);
+    L.DomEvent.disableScrollPropagation(el);
+    return el;
+  };
+  controleLegenda.addTo(mapa);
+
   camada = L.geoJSON(estado.dados.geojson, {
     style: estiloFeature(calcularClasses()),
     onEachFeature: (f, l) => {
@@ -294,8 +308,6 @@ function trocarAba(nome) {
   document.getElementById("vista-analisar").hidden = nome !== "analisar";
   document.getElementById("controles-mapa").style.visibility =
     nome === "mapa" ? "visible" : "hidden";
-  document.getElementById("legenda").style.display =
-    nome === "mapa" ? "" : "none";
   // o tooltip é position:fixed — sem esconder, ele vaza para a outra aba
   tooltip.hidden = true;
   if (nome === "mapa" && mapa) mapa.invalidateSize();
