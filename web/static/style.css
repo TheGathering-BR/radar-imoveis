@@ -296,5 +296,15 @@ body {
      largura da tela com 5 métricas — precisa quebrar por dentro também. */
   .grupo { flex-wrap: wrap; }
   .grupo button { font-size: 12px; padding: 5px 9px; }
+  /* Tooltip como faixa ancorada no rodapé: acompanhar o toque com um card de
+     ~340px numa tela de 375px jogava metade dele para fora. */
+  .tooltip {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    top: auto;
+    min-width: 0;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.35);
+  }
   .rodape { font-size: 11px; line-height: 1.4; padding: 8px 12px 14px; }
 }

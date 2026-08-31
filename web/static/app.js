@@ -139,13 +139,26 @@ function htmlTooltip(p) {
     ).join("")}</table>`;
 }
 
+const ehTelaEstreita = () => matchMedia("(max-width: 800px)").matches;
+
 function moverTooltip(ev) {
+  // Em tela estreita o tooltip é uma faixa ancorada no rodapé (CSS): seguir o
+  // toque com um card quase da largura da tela deixava metade dele fora.
+  if (ehTelaEstreita()) {
+    tooltip.style.left = "";
+    tooltip.style.top = "";
+    return;
+  }
   const margem = 14;
+  const r = tooltip.getBoundingClientRect();
   let x = ev.originalEvent.clientX + margem;
   let y = ev.originalEvent.clientY + margem;
-  const r = tooltip.getBoundingClientRect();
   if (x + r.width > innerWidth - 8) x = ev.originalEvent.clientX - r.width - margem;
   if (y + r.height > innerHeight - 8) y = ev.originalEvent.clientY - r.height - margem;
+  // Trava final: virar de lado pode jogar o card para fora quando ele é quase
+  // tão largo quanto a janela.
+  x = Math.max(8, Math.min(x, innerWidth - r.width - 8));
+  y = Math.max(8, Math.min(y, innerHeight - r.height - 8));
   tooltip.style.left = x + "px";
   tooltip.style.top = y + "px";
 }
