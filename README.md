@@ -151,20 +151,27 @@ com preço fechado.
 ## Atualizar os dados publicados
 
 Os dados brutos ficam só na máquina (`data/`, ~580 MB, fora do git). O que vai
-para o GitHub são as medianas agregadas por bairro. O ciclo completo:
+para o GitHub são as medianas agregadas por bairro. Um comando faz o ciclo
+inteiro — ITBI, os três portais, agregados, `docs/` e push:
 
 ```bash
-python scripts/atualizar_itbi.py                                             # ITBI (mensal)
-python scripts/coletar_anuncios.py --portal vivareal   --tipos apartamento casa --paginas 12
-python scripts/coletar_anuncios.py --portal zapimoveis --tipos apartamento casa --paginas 12
-python scripts/coletar_anuncios.py --portal imovelweb  --tipos apartamento casa --paginas 8
-python scripts/build_estatico.py                                             # regenera docs/
-git add docs && git commit -m "atualiza dados" && git push
+python scripts/atualizar_tudo.py
 ```
 
-Cada script já recalcula os agregados ao terminar, então o `build_estatico.py`
-sempre pega o estado mais recente do banco. As coletas são incrementais: o que
-já está no banco é preservado e só o preço/`ultima_captura` é atualizado.
+| Flag | Efeito |
+|---|---|
+| `--sem-push` | atualiza e gera `docs/`, mas não publica |
+| `--sem-itbi` | pula o ITBI (a Prefeitura publica 1×/mês) |
+| `--paginas 20` | coleta mais funda (padrão 12 por zona) |
+| `--portais vivareal zapimoveis` | escolhe os portais |
+
+Leva ~30–40 min, quase tudo esperando os delays entre requisições. Cada etapa
+é isolada: se um portal cair, os demais seguem e o que já está no banco é
+preservado — as coletas são incrementais, só somam anúncios novos e atualizam
+preço/`ultima_captura`. O resumo final diz o que entrou e o que falhou.
+
+Os passos avulsos continuam disponíveis (`atualizar_itbi.py`,
+`coletar_anuncios.py`, `build_estatico.py`) para quando quiser rodar só um.
 
 O ITBI é publicado mensalmente pela Prefeitura; os anúncios rotacionam a cada
 rodada. Rodar as coletas com frequência aumenta a amostra por bairro — é assim
