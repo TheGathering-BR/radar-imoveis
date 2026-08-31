@@ -19,11 +19,22 @@ const MIN_AMOSTRAS_RANKING = 30; // amostra ITBI (3 meses) p/ entrar no ranking
 const MIN_ANUNCIOS_RANKING = 5;  // anúncios mínimos p/ ranquear preço pedido
 const MIN_ANUNCIOS_GAP = 3;      // anúncios mínimos p/ colorir o gap pedido×ITBI
 
+// Acesso ao bloco da janela escolhida: {mediana, n, agio, agio_n}
+const nivel = (p, janela) => (p.itbi && p.itbi[janela]) || {};
+
+// Gap pedido×fechado derivado no cliente, para seguir a janela selecionada.
+function calcularGap(p, janela) {
+  const med = nivel(p, janela).mediana;
+  if (!med || !p.anuncios_mediana) return null;
+  return (med / p.anuncios_mediana - 1.0) * 100.0;
+}
+
 const METRICAS = {
   anuncios: { rotulo: "Pedido — mediana R$/m²", rampa: RAMPA_AZUL,
+              semJanela: true,
               valor: p => p.anuncios_mediana },
   itbi:     { rotulo: "Fechado (ITBI) — mediana R$/m²", rampa: RAMPA_AQUA,
-              valor: p => p.itbi_mediana },
+              valor: (p, janela) => nivel(p, janela).mediana },
   var:      { rotulo: "Valorização (ITBI)", rampa: RAMPA_DIVERGENTE,
               valor: (p, janela) => p.var ? p.var[janela] : null },
   // Quanto o preço que FECHA (ITBI) fica abaixo do que se PEDE (anúncios).
@@ -31,13 +42,15 @@ const METRICAS = {
   // Quanto o valor declarado supera o Valor Venal de Referência (piso de
   // tributação). Perto de zero = declarado no piso.
   agio:     { rotulo: "Declarado vs Venal", rampa: RAMPA_VIOLETA,
-              valor: p => (p.agio_n >= MIN_AMOSTRAS_RANKING
-                           && p.agio_venal !== null && p.agio_venal !== undefined)
-                          ? p.agio_venal : null },
+              valor: (p, janela) => {
+                const nv = nivel(p, janela);
+                return (nv.agio_n >= MIN_AMOSTRAS_RANKING
+                        && nv.agio !== null && nv.agio !== undefined)
+                       ? nv.agio : null;
+              } },
   gap:      { rotulo: "Pedido vs Fechado (ITBI)", rampa: RAMPA_GAP,
-              valor: p => (p.anuncios_n >= MIN_ANUNCIOS_GAP
-                           && p.gap !== null && p.gap !== undefined)
-                          ? p.gap : null },
+              valor: (p, janela) => (p.anuncios_n >= MIN_ANUNCIOS_GAP)
+                                    ? calcularGap(p, janela) : null },
 };
 
 const estado = { metrica: "anuncios", janela: "m12", classe: "todos", dados: null };
@@ -118,16 +131,16 @@ function htmlTooltip(p) {
   linhas.push(["<span class='marcador' style='background:" + RAMPA_AZUL[4] + "'></span>Pedido",
     p.anuncios_mediana ? "R$ " + fmtReal.format(p.anuncios_mediana) + "/m²" : "sem dados",
     p.anuncios_n ? p.anuncios_n + " anúncios" : ""]);
+  const nv = nivel(p, estado.janela);
   linhas.push(["<span class='marcador' style='background:" + RAMPA_AQUA[4] + "'></span>Fechado (ITBI)",
-    p.itbi_mediana ? "R$ " + fmtReal.format(p.itbi_mediana) + "/m²" : "sem dados",
-    p.itbi_n ? p.itbi_n + " vendas (3m)" : ""]);
+    nv.mediana ? "R$ " + fmtReal.format(nv.mediana) + "/m²" : "sem dados",
+    nv.n ? `${nv.n} vendas (${jan.replace(" meses", "m")})` : ""]);
   const v = p.var ? p.var[estado.janela] : null;
   linhas.push(["Valorização " + jan,
     v !== null && v !== undefined ? fmtPct(v) : "amostra insuficiente", ""]);
   linhas.push(["Declarado vs venal",
-    p.agio_venal !== null && p.agio_venal !== undefined
-      ? fmtPct(p.agio_venal) : "—", ""]);
-  const gap = p.gap;
+    nv.agio !== null && nv.agio !== undefined ? fmtPct(nv.agio) : "—", ""]);
+  const gap = calcularGap(p, estado.janela);
   linhas.push(["Pedido vs fechado",
     gap !== null && gap !== undefined
       ? (gap <= 0 ? `${fmtPct(gap)} — fecha abaixo do pedido`
@@ -170,13 +183,16 @@ function renderLegenda(classes) {
   const m = METRICAS[estado.metrica];
   const ePct = ["var", "gap", "agio"].includes(estado.metrica);
   const fmt = ePct ? fmtPct : v => "R$ " + fmtReal.format(v);
+  const jan = estado.janela.replace("m", "") + "m";
   const titulo = estado.metrica === "var"
     ? m.rotulo + " — " + estado.janela.replace("m", "") + " meses"
     : estado.metrica === "gap"
-      ? "ITBI vs pedido (− = fecha abaixo)"
+      ? `ITBI (${jan}) vs pedido — − = fecha abaixo`
       : estado.metrica === "agio"
-        ? "Declarado sobre o venal de referência"
-        : m.rotulo;
+        ? `Declarado sobre o venal — ${jan}`
+        : estado.metrica === "itbi"
+          ? `${m.rotulo} — ${jan}`
+          : m.rotulo;
   const vistos = new Set();
   const faixas = classes.rampa.flatMap((cor, i) => {
     let rotulo;
@@ -232,40 +248,40 @@ const RANKINGS = {
                  ${MIN_ANUNCIOS_RANKING} anúncios.`,
   },
   itbi: {
-    topo: "Mais caros", base: "Mais baratos", ordem: "desc",
-    valor: p => p.itbi_mediana,
-    apto: p => p.itbi_n >= MIN_AMOSTRAS_RANKING,
+    topo: "Mais caros", base: "Mais baratos", ordem: "desc", janela: true,
+    valor: (p, j) => nivel(p, j).mediana,
+    apto: (p, j) => nivel(p, j).n >= MIN_AMOSTRAS_RANKING,
     fmt: v => "R$ " + fmtReal.format(v),
-    secundario: p => p.itbi_n + " vendas",
-    nota: () => `Mediana do preço/m² fechado (ITBI) na janela de 3 meses;
+    secundario: (p, j) => nivel(p, j).n + " vendas",
+    nota: () => `Mediana do preço/m² fechado (ITBI) no período selecionado;
                  só bairros com ao menos ${MIN_AMOSTRAS_RANKING} vendas.`,
   },
   var: {
     topo: "Maiores altas", base: "Maiores quedas", ordem: "desc",
     janela: true,
     valor: (p, janela) => (p.var ? p.var[janela] : null),
-    apto: p => p.itbi_n >= MIN_AMOSTRAS_RANKING,
+    apto: p => nivel(p, "m3").n >= MIN_AMOSTRAS_RANKING,
     fmt: fmtPct,
     classe: v => (v >= 0 ? "pos" : "neg"),
-    secundario: p => "R$ " + fmtReal.format(p.itbi_mediana),
+    secundario: p => "R$ " + fmtReal.format(nivel(p, "m3").mediana),
     nota: () => `Valorização do preço/m² fechado (ITBI), janelas móveis de
                  3 meses; só bairros com amostra suficiente.`,
   },
   agio: {
     topo: "Maior ágio sobre o venal", base: "Declaram perto do piso venal",
-    ordem: "desc",
-    valor: p => p.agio_venal,
-    apto: p => p.agio_n >= MIN_AMOSTRAS_RANKING,
+    ordem: "desc", janela: true,
+    valor: (p, j) => nivel(p, j).agio,
+    apto: (p, j) => nivel(p, j).agio_n >= MIN_AMOSTRAS_RANKING,
     fmt: fmtPct,
-    secundario: p => p.agio_n + " vendas",
+    secundario: (p, j) => nivel(p, j).agio_n + " vendas",
     nota: () => `Mediana de quanto o valor declarado supera o Valor Venal de
-                 Referência, nas mesmas vendas da janela de 3 meses.`,
+                 Referência, nas vendas do período selecionado.`,
   },
   gap: {
     // ascendente: o mais negativo (fecha bem abaixo do pedido) vem primeiro
     topo: "Fecham mais abaixo do pedido", base: "Fecham mais perto do pedido",
-    ordem: "asc",
-    valor: p => p.gap,
+    ordem: "asc", janela: true,
+    valor: (p, j) => calcularGap(p, j),
     apto: p => p.anuncios_n >= MIN_ANUNCIOS_GAP,
     fmt: fmtPct,
     // sem cor por sinal: aqui negativo não é "ruim", é só direção — e verde/
@@ -283,7 +299,7 @@ function renderRanking() {
     .map(f => f.properties)
     .filter(p => {
       const v = cfg.valor(p, estado.janela);
-      return v !== null && v !== undefined && cfg.apto(p);
+      return v !== null && v !== undefined && cfg.apto(p, estado.janela);
     })
     .sort((a, b) => {
       const va = cfg.valor(a, estado.janela), vb = cfg.valor(b, estado.janela);
@@ -302,7 +318,7 @@ function renderRanking() {
     const classe = cfg.classe ? cfg.classe(v) : "";
     return `<li data-id="${p.id}">
       <span class="nome">${p.nome}</span>
-      <span class="mediana">${cfg.secundario(p)}</span>
+      <span class="mediana">${cfg.secundario(p, estado.janela)}</span>
       <span class="delta ${classe}">${cfg.fmt(v)}</span></li>`;
   };
   document.getElementById("ranking-altas").innerHTML =
@@ -332,12 +348,13 @@ function render() {
   // polígonos "hoverados" voltariam para o estilo da métrica anterior.
   camada.options.style = estilo;
   camada.setStyle(estilo);
-  // A janela só afeta a valorização: nas demais métricas os botões ficariam
-  // clicáveis sem efeito nenhum.
-  const usaJanela = estado.metrica === "var";
+  // O período vale para tudo, menos o preço pedido: os anúncios só têm as
+  // capturas recentes (janela de 90 dias), não há histórico para agregar.
+  const usaJanela = !METRICAS[estado.metrica].semJanela;
   document.querySelectorAll(".botao-janela").forEach(b => {
     b.disabled = !usaJanela;
-    b.title = usaJanela ? "" : "A janela de tempo só se aplica à Valorização";
+    b.title = usaJanela ? ""
+      : "Os anúncios só têm as capturas recentes — sem histórico para agregar";
   });
   renderLegenda(classes);
   renderRanking();

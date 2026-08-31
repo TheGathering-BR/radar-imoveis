@@ -15,7 +15,7 @@ import sqlite3
 import statistics
 from collections import defaultdict
 
-from radar.config import CIDADE_ATIVA, MIN_AMOSTRAS_JANELA
+from radar.config import CIDADE_ATIVA, JANELAS_MESES, MIN_AMOSTRAS_JANELA
 
 CLASSES_ITBI = ("apartamento", "casa")
 CLASSES_ANUNCIOS = ("apartamento", "casa", "casa_vila", "cobertura")
@@ -108,7 +108,7 @@ def recalcular(conn: sqlite3.Connection) -> int:
         for mes, valores in por_mes.items():
             variacoes = {}
             atual = _mediana_janela(por_mes, mes)
-            for janela in (3, 6, 12, 24):
+            for janela in JANELAS_MESES:
                 var = None
                 if atual is not None:
                     anterior = _mediana_janela(por_mes, _mes_add(mes, -janela))
@@ -118,15 +118,16 @@ def recalcular(conn: sqlite3.Connection) -> int:
             linhas.append((
                 bairro_id, mes, classe,
                 statistics.median(valores), len(valores),
-                variacoes[3], variacoes[6], variacoes[12], variacoes[24],
+                *(variacoes[j] for j in JANELAS_MESES),
             ))
 
+    colunas_var = ", ".join(f"var_{j}m" for j in JANELAS_MESES)
+    marcas = ", ".join("?" * (5 + len(JANELAS_MESES)))
     conn.execute("DELETE FROM agregados_itbi")
     conn.executemany(
-        """INSERT INTO agregados_itbi
-             (bairro_id, mes, classe, mediana_preco_m2, n_amostras,
-              var_3m, var_6m, var_12m, var_24m)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        f"""INSERT INTO agregados_itbi
+              (bairro_id, mes, classe, mediana_preco_m2, n_amostras, {colunas_var})
+            VALUES ({marcas})""",
         linhas,
     )
     conn.commit()

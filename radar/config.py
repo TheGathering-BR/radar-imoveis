@@ -26,6 +26,7 @@ HTTP_HEADERS = {
 # reescrito mensalmente (a URL pode mudar a cada atualização — conferir na
 # página acima se o download falhar).
 ITBI_URLS = {
+    2021: "https://www.prefeitura.sp.gov.br/cidade/secretarias/upload/fazenda/arquivos/itbi/ITBI_Setembro_2022/GUIAS_DE_ITBI_PAGAS_(2021).xlsx",
     2022: "https://www.prefeitura.sp.gov.br/cidade/secretarias/upload/fazenda/arquivos/XLSX/GUIAS_DE_ITBI_PAGAS_12-2022.xlsx",
     2023: "https://www.prefeitura.sp.gov.br/cidade/secretarias/upload/fazenda/arquivos/XLSX/GUIAS-DE-ITBI-PAGAS-2023.xlsx",
     2024: "https://prefeitura.sp.gov.br/cidade/secretarias/upload/fazenda/arquivos/itbi/GUIAS-DE-ITBI-PAGAS-2024.xlsx",
@@ -33,6 +34,12 @@ ITBI_URLS = {
     2026: "https://prefeitura.sp.gov.br/documents/d/fazenda/guias-de-itbi-pagas-4-xlsx",
 }
 ANOS_PADRAO = sorted(ITBI_URLS)
+
+# Janelas de tempo oferecidas no dashboard, em meses. Na Valorização é o
+# intervalo da comparação; nas métricas de nível (Fechado, Declarado vs Venal)
+# é o período agregado na mediana. A maior define quanto histórico o payload
+# precisa carregar.
+JANELAS_MESES = (3, 6, 12, 24, 36, 48, 60)
 ANO_VIGENTE = 2026  # sempre re-baixado (atualizado mensalmente pela Prefeitura)
 
 # --- GeoSampa (WFS oficial da Prefeitura) ----------------------------------

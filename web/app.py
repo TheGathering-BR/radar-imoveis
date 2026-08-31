@@ -20,7 +20,7 @@ from shapely.geometry import mapping, shape
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from radar import analisador
-from radar.config import CIDADE_ATIVA, DB_PATH
+from radar.config import CIDADE_ATIVA, DB_PATH, JANELAS_MESES
 from radar.db import get_conn
 from radar.pipelines.agregados import _mes_add
 
@@ -58,21 +58,24 @@ def _mes_referencia_itbi(conn) -> str:
 def _montar_payload(classe: str) -> dict:
     conn = get_conn()
     mes_itbi = _mes_referencia_itbi(conn)
-    meses3 = [_mes_add(mes_itbi, -d) for d in range(3)]
     classe_itbi = CLASSE_ITBI_EQUIVALENTE.get(classe, classe)
 
-    # Mediana ITBI: janela de 3 meses terminando no mês de referência.
-    # 'todos' = residencial (classe atribuída); nunca inclui garagem/loja/etc.
-    itbi = defaultdict(list)
-    # Ágio do valor declarado sobre o Valor Venal de Referência (piso de
-    # tributação da Prefeitura), nas mesmas transações da mediana ITBI.
-    agio = defaultdict(list)
-    marcas = ",".join("?" * len(meses3))
+    # Carrega de uma vez o histórico da MAIOR janela e depois vai acumulando:
+    # como as janelas são aninhadas (3 ⊂ 6 ⊂ 12...), uma passada basta para
+    # calcular todas. O payload leva todas as janelas para que trocar de
+    # período no dashboard não exija outra requisição.
+    janela_max = max(JANELAS_MESES)
+    meses = [_mes_add(mes_itbi, -d) for d in range(janela_max)]
+    marcas = ",".join("?" * len(meses))
     filtro_classe = "AND classe IS NOT NULL" if classe_itbi == "todos" \
         else "AND classe = ?"
-    params = [CIDADE_ATIVA, *meses3] + ([] if classe_itbi == "todos" else [classe_itbi])
-    for bid, pm2, valor, venal in conn.execute(
-        f"""SELECT bairro_id, preco_m2, valor_transacao, valor_venal_ref
+    params = [CIDADE_ATIVA, *meses] + ([] if classe_itbi == "todos" else [classe_itbi])
+
+    # bairro -> mês -> lista de (preço/m², ágio sobre o venal ou None)
+    por_mes = defaultdict(lambda: defaultdict(list))
+    for bid, mes, pm2, valor, venal in conn.execute(
+        f"""SELECT bairro_id, substr(data_transacao, 1, 7), preco_m2,
+                   valor_transacao, valor_venal_ref
             FROM transacoes
             WHERE cidade = ? AND elegivel_mediana = 1
               AND bairro_id IS NOT NULL
@@ -80,15 +83,34 @@ def _montar_payload(classe: str) -> dict:
               {filtro_classe}""",
         params,
     ):
-        itbi[bid].append(pm2)
-        if venal and venal > 0 and valor:
-            agio[bid].append((valor / venal - 1.0) * 100.0)
+        ag = (valor / venal - 1.0) * 100.0 if (venal and venal > 0 and valor) else None
+        por_mes[bid][mes].append((pm2, ag))
 
+    # bairro -> {"m3": {...}, "m6": {...}, ...}
+    niveis = {}
+    for bid, meses_bairro in por_mes.items():
+        acc_pm2, acc_agio, idx, por_janela = [], [], 0, {}
+        for w in JANELAS_MESES:
+            while idx < w:
+                for pm2, ag in meses_bairro.get(meses[idx], ()):
+                    acc_pm2.append(pm2)
+                    if ag is not None:
+                        acc_agio.append(ag)
+                idx += 1
+            por_janela[f"m{w}"] = {
+                "mediana": statistics.median(acc_pm2) if acc_pm2 else None,
+                "n": len(acc_pm2),
+                "agio": statistics.median(acc_agio) if acc_agio else None,
+                "agio_n": len(acc_agio),
+            }
+        niveis[bid] = por_janela
+
+    colunas_var = ", ".join(f"var_{j}m" for j in JANELAS_MESES)
     variacoes = {
-        bid: {"m3": v3, "m6": v6, "m12": v12, "m24": v24}
-        for bid, v3, v6, v12, v24 in conn.execute(
-            """SELECT bairro_id, var_3m, var_6m, var_12m, var_24m
-               FROM agregados_itbi WHERE mes = ? AND classe = ?""",
+        linha[0]: {f"m{j}": v for j, v in zip(JANELAS_MESES, linha[1:])}
+        for linha in conn.execute(
+            f"""SELECT bairro_id, {colunas_var}
+                FROM agregados_itbi WHERE mes = ? AND classe = ?""",
             (mes_itbi, classe_itbi),
         )
     }
@@ -128,31 +150,21 @@ def _montar_payload(classe: str) -> dict:
         g = shape(json.loads(geom_json)).simplify(
             SIMPLIFICACAO_GRAUS, preserve_topology=True
         )
-        amostras_itbi = itbi.get(bid, [])
-        med_itbi = statistics.median(amostras_itbi) if amostras_itbi else None
-        amostras_agio = agio.get(bid, [])
-        med_agio = statistics.median(amostras_agio) if amostras_agio else None
         anu = anuncios.get(bid, {})
         med_anu, n_anu = anu.get("mediana"), anu.get("n", 0)
-        # Preço fechado (ITBI) em relação ao pedido, em %.
-        # NEGATIVO = fecha abaixo do que se pede (caso comum).
-        gap = None
-        if med_itbi and med_anu:
-            gap = (med_itbi / med_anu - 1.0) * 100.0
         features.append({
             "type": "Feature",
             "properties": {
                 "id": bid,
                 "nome": nome.title(),
                 "regiao": regiao,
-                "itbi_mediana": med_itbi,
-                "itbi_n": len(amostras_itbi),
-                "agio_venal": med_agio,
-                "agio_n": len(amostras_agio),
+                # por janela: mediana ITBI, amostra e ágio sobre o venal.
+                # O gap pedido×fechado é derivado no cliente, para acompanhar
+                # a janela escolhida sem inchar o payload.
+                "itbi": niveis.get(bid, {}),
                 "anuncios_mediana": med_anu,
                 "anuncios_n": n_anu,
                 "var": variacoes.get(bid, {}),
-                "gap": gap,
             },
             "geometry": mapping(g),
         })
@@ -163,6 +175,7 @@ def _montar_payload(classe: str) -> dict:
         "classe": classe,
         "classe_itbi": classe_itbi,  # difere quando o ITBI só tem a classe-mãe
         "mes_itbi": mes_itbi,
+        "janelas": list(JANELAS_MESES),
         "captura_anuncios": captura_anuncios,
         "janela_anuncios_dias": JANELA_ANUNCIOS_DIAS,
         "geojson": {"type": "FeatureCollection", "features": features},

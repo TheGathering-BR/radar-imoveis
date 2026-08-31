@@ -80,6 +80,9 @@ CREATE TABLE IF NOT EXISTS agregados_itbi (
   var_6m           REAL,
   var_12m          REAL,
   var_24m          REAL,
+  var_36m          REAL,
+  var_48m          REAL,
+  var_60m          REAL,
   PRIMARY KEY (bairro_id, mes, classe)
 );
 
@@ -167,10 +170,12 @@ def _migrar(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(anuncios)")}
     if cols and "fingerprint" not in cols:
         conn.execute("ALTER TABLE anuncios ADD COLUMN fingerprint TEXT")
-    # Agregados são derivados: se ainda não têm a dimensão classe, recria.
-    for tabela in ("agregados_itbi", "agregados_anuncios"):
+    # Agregados são derivados de `transacoes`/`anuncios`: quando o schema
+    # muda, sai mais barato recriar e recalcular do que migrar coluna a coluna.
+    for tabela, obrigatorias in (("agregados_itbi", ("classe", "var_60m")),
+                                 ("agregados_anuncios", ("classe",))):
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({tabela})")}
-        if cols and "classe" not in cols:
+        if cols and not set(obrigatorias) <= cols:
             conn.execute(f"DROP TABLE {tabela}")
 
 

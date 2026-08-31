@@ -70,6 +70,23 @@ Mão (viável, mas cards sem coordenadas — geocodificação fraca).
 python web/app.py   # dashboard em http://127.0.0.1:8010
 ```
 
+### O seletor de período
+
+O mesmo controle (3m a 60m) significa duas coisas diferentes, conforme a
+métrica — e é por isso que ele aparece em quase todas:
+
+| Métrica | O que o período faz |
+|---|---|
+| Fechado (ITBI) | **agrega**: a mediana usa as vendas dos N meses até o mês de referência |
+| Declarado vs Venal | idem — mesmas vendas do período |
+| Pedido vs Fechado | idem, no lado do ITBI (o pedido não tem histórico) |
+| Valorização | **compara**: mediana de agora contra a de N meses atrás |
+| Pedido (anúncios) | não se aplica — só há as capturas recentes (90 dias) |
+
+Períodos longos aumentam a amostra mas misturam preços de épocas
+diferentes; períodos curtos são mais atuais e mais ruidosos em bairro com
+poucas vendas. O `n` de cada bairro aparece no tooltip e no ranking.
+
 O dashboard mostra o coroplético dos 96 distritos com quatro métricas —
 preço/m² pedido (anúncios), fechado (ITBI), valorização % (janelas de
 3/6/12/24 meses) e o gap **Pedido vs Fechado (ITBI)** — tooltip com as duas medianas +
