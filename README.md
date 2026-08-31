@@ -4,7 +4,7 @@ Dashboard de análise do mercado imobiliário de São Paulo (capital), cruzando
 **preço fechado** (transações reais de ITBI da Prefeitura) com **preço pedido**
 (anúncios ativos de três portais) — por distrito e por classe de imóvel.
 
-**[→ Ver o mapa online](https://SEU-USUARIO.github.io/radar-imoveis/)**
+**[→ Ver o mapa online](https://thegathering-br.github.io/radar-imoveis/)**
 (versão estática: o mapa funciona; o analisador de anúncio precisa rodar local)
 
 ## O que ele responde
